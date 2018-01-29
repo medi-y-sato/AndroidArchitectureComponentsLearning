@@ -3,12 +3,20 @@ package jp.mediba.ysato.androidarchitecturecomponentslearning
 import android.content.Context
 import android.net.Uri
 import android.os.Bundle
+import android.preference.PreferenceManager
 import android.support.v4.app.Fragment
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.Toast
+import com.squareup.moshi.KotlinJsonAdapterFactory
+import com.squareup.moshi.Moshi
+import okhttp3.MediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody
 import timber.log.Timber
 
 
@@ -114,11 +122,51 @@ class MastodonFragment : Fragment(), View.OnClickListener {
         }
     }
 
+    internal var client = OkHttpClient()
+
     override fun onClick(v:View?){
         when (v?.id) {
             R.id.oauth2_client_registration -> {
-                Timber.d("oauth2_client_registration")
-                Toast.makeText(getActivity(),"oauth2_client_registration",Toast.LENGTH_SHORT).show()
+
+                object: MyAsyncTask(){
+                    override fun doInBackground(vararg params: Void): String {
+                        val MIMEType= MediaType.parse("application/json; charset=utf-8");
+
+                        val urlString:String ="https://mstdn.monappy.jp/api/v1/apps"
+                        val requestBodyJson:String = "{" +
+                                "\"client_name\":\"test\"," +
+                                "\"redirect_uris\":\"urn:ietf:wg:oauth:2.0:oob\"," +
+                                "\"scopes\":\"read write follow\"" +
+                                "}"
+                        val requestBody = RequestBody.create(MIMEType, requestBodyJson)
+
+                        val request = Request.Builder().url(urlString).post(requestBody).build()
+
+                        val response = client.newCall(request).execute()
+                        val res = response.body()!!.string()
+
+                        val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
+                        val dto = moshi.adapter(JsonRegisterClient::class.java).fromJson(res)
+
+                        if (dto?.id != null && dto?.client_id != null && dto?.client_secret != null && dto?.redirect_uri != null){
+                            val pref = PreferenceManager.getDefaultSharedPreferences(context)
+                            pref.edit().putString("id", dto?.id.toString()).commit()
+                            pref.edit().putString("redirect_uri", dto?.redirect_uri.toString()).commit()
+                            pref.edit().putString("client_id", dto?.client_id.toString()).commit()
+                            pref.edit().putString("client_secret", dto?.client_secret.toString()).commit()
+                        }else{
+                            Toast.makeText(getActivity(),"Failed : oauth2_client_registration",Toast.LENGTH_SHORT).show()
+                        }
+
+                        if (checkStateOauthClientRegist()){
+                            Log.d("DEBUG", "TRUE!!!!!1")
+                        } else{
+                            Log.d("DEBUG", "False ....")
+                        }
+                        return res
+                    }
+                }.execute()
+
             }
 
             R.id.login -> {
@@ -130,5 +178,24 @@ class MastodonFragment : Fragment(), View.OnClickListener {
             }
         }
     }
+
+    fun checkState(){
+
+        val oAuthClientRegistered = checkStateOauthClientRegist()
+
+    }
+
+    private fun checkStateOauthClientRegist(): Boolean{
+        val pref = PreferenceManager.getDefaultSharedPreferences(context)
+
+        val getprefId = pref.getString("id",null)
+        val getprefRedirect_uri = pref.getString("redirect_uri",null)
+        val getprefClient_id = pref.getString("client_id",null)
+        val getprefClient_secret = pref.getString("client_secret",null)
+
+        return (getprefId != null && getprefClient_id != null && getprefClient_secret != null && getprefRedirect_uri != null)
+
+    }
+
 
 }// Required empty public constructor
